@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from scanner.camera import Camera
 from scanner.preprocessing import process_frame
-
+from scanner.qr_detector import detect_qr_codes
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -65,8 +65,10 @@ class MainWindow(QMainWindow):
             "Original",
             "Grayscale",
             "Gaussian Blur",
-            "Threshold"
+            "Threshold",
+            "QR Detection"
         ])
+
         self.mode_selector.currentTextChanged.connect(
             self.refresh_preview
         )
@@ -140,6 +142,51 @@ class MainWindow(QMainWindow):
         self.refresh_preview()
         self.status_label.setText("Status: Image loaded")
 
+    def draw_qr_detections(self, frame):
+        """Draw finder patterns and QR boundaries."""
+
+        output = frame.copy()
+
+        detections, candidates = detect_qr_codes(frame)
+
+        # Draw candidate finder-pattern centers.
+        for candidate in candidates:
+            cx, cy = candidate["center"]
+
+            cv2.circle(
+                output,
+                (cx, cy),
+                5,
+                (0, 255, 255),
+                -1
+            )
+
+        # Draw QR outlines.
+        for detection in detections:
+            corners = detection["corners"].astype(int)
+
+            cv2.polylines(
+                output,
+                [corners],
+                True,
+                (0, 255, 0),
+                3
+            )
+
+            x, y = corners[0]
+
+            cv2.putText(
+                output,
+                "QR DETECTED",
+                (int(x), int(y) - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0),
+                2
+            )
+
+        return output
+
     def refresh_preview(self):
         if self.current_frame is None:
             return
@@ -147,7 +194,10 @@ class MainWindow(QMainWindow):
         stages = process_frame(self.current_frame)
         selected_mode = self.mode_selector.currentText()
 
-        image = stages[selected_mode]
+        if selected_mode == "QR Detection":
+            image = self.draw_qr_detections(self.current_frame)
+        else:
+            image = stages[selected_mode]
 
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
